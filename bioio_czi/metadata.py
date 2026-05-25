@@ -16,6 +16,24 @@ class UnsupportedMetadataError(Exception):
     """
 
 
+def czi_to_ome_xslt_path() -> PathLike:
+    """
+    Return the path to the bundled CZI-to-OME XSLT entrypoint.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the XSLT submodule was not initialized in a source checkout.
+    """
+    xslt_path = Path(__file__).parent / "czi-to-ome-xslt/xslt/czi-to-ome.xsl"
+    if not xslt_path.is_file():
+        raise FileNotFoundError(
+            "CZI OME XSLT files are missing. For a source checkout, run:\n"
+            "  git submodule update --init bioio_czi/czi-to-ome-xslt"
+        )
+    return xslt_path
+
+
 def generate_ome_image_id(image_id: Union[str, int]) -> str:
     """
     Naively generates the standard OME image ID using a provided ID.

@@ -1058,30 +1058,17 @@ class Reader(BaseReader):
     @property
     def time_interval(self) -> Optional[timedelta]:
         """
-        Extracts the the average time interval between consecutive timepoints
-        as a timedelta object.
+        Extracts the timelapse interval from
+        ``Dimensions.T.Positions.Interval.Increment``.
 
         Returns
         -------
         Optional[timedelta]
-            Average interval between timepoints.
-            Returns None if total_time_duration is None or less than two timepoints.
+            Timelapse interval when present in the metadata XML.
         """
+        from .. import standard_metadata
 
-        # The purpose of this conditional is to not log a warning for files with a
-        # single timepoint.
-        timepoints = (
-            self.dims[DimensionNames.Time][0]
-            if DimensionNames.Time in self.dims.order
-            else None
-        )
-        if timepoints is None or timepoints < 2:
-            return None
-
-        total_duration = self.total_time_duration
-        if total_duration is None:
-            return None
-        return total_duration / (timepoints - 1)
+        return standard_metadata.time_interval(self.metadata)
 
     @property
     def total_time_duration(self) -> Optional[timedelta]:

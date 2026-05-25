@@ -310,7 +310,7 @@ class Reader(BaseReader):
         """
         ome = metadata.transform_metadata_with_xslt(
             self._implementation.metadata,
-            Path(__file__).parent / "czi-to-ome-xslt/xslt/czi-to-ome.xsl",
+            metadata.czi_to_ome_xslt_path(),
         )
 
         # NOTE:
@@ -459,11 +459,11 @@ class Reader(BaseReader):
     @property
     def time_interval(self) -> TimeInterval:
         """
-        Extracts the time interval between the first two time points in milliseconds.
         Returns
         -------
-        Optional[float]
-            Timelapse interval in milliseconds. Returns None if extraction fails.
+        interval: TimeInterval
+            Timelapse interval between consecutive timepoints, from
+            ``Dimensions.T.Positions.Interval.Increment``.
         """
         return self._implementation.time_interval
 

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import logging
+from datetime import timedelta
 from typing import Any, Callable, ContextManager, Dict, Optional, Tuple, Union
 from xml.etree import ElementTree as ET
 
@@ -493,6 +494,21 @@ class Reader(BaseReader):
             pylibCZIrw.
         """
         return None
+
+    @property
+    def time_interval(self) -> Optional[timedelta]:
+        """
+        Extracts the timelapse interval from
+        ``Dimensions.T.Positions.Interval.Increment``.
+
+        Returns
+        -------
+        Optional[timedelta]
+            Timelapse interval when present in the metadata XML.
+        """
+        from .. import standard_metadata
+
+        return standard_metadata.time_interval(self.metadata)
 
     @property
     def total_time_duration(self) -> None:
