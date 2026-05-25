@@ -22,7 +22,12 @@ from fsspec.spec import AbstractFileSystem
 from pylibCZIrw import czi
 
 from .. import metadata
-from ..channels import get_channel_names, size
+from ..channels import (
+    attach_channel_emission_wavelength_coord_attrs,
+    get_channel_emission_wavelengths,
+    get_channel_names,
+    size,
+)
 from ..metadata import UnsupportedMetadataError
 from ..pixel_sizes import get_physical_pixel_sizes
 
@@ -372,11 +377,19 @@ class Reader(BaseReader):
             )
 
         # 6. Package chunks and metadata into a DataArray
-        return xr.DataArray(
+        data_array = xr.DataArray(
             data=da.block(lazy_arrays.tolist()),
             dims=ordered_dims,
             coords=coords,
             attrs={constants.METADATA_UNPROCESSED: self.metadata},
+        )
+        return attach_channel_emission_wavelength_coord_attrs(
+            data_array,
+            get_channel_emission_wavelengths(
+                self.metadata,
+                self._get_czi_scene_index(),
+                dim_bounds,
+            ),
         )
 
     def _read_immediate(self) -> xr.DataArray:
@@ -494,6 +507,20 @@ class Reader(BaseReader):
             pylibCZIrw.
         """
         return None
+
+    @property
+    def channel_emission_wavelengths(self) -> tuple[Optional[float], ...]:
+        """
+        Per-channel emission wavelengths in nanometers from metadata XML.
+        """
+        wavelengths = get_channel_emission_wavelengths(
+            self.metadata,
+            self._get_czi_scene_index(),
+            self._total_bounding_box,
+        )
+        if wavelengths is None:
+            return ()
+        return tuple(wavelengths)
 
     @property
     def time_interval(self) -> Optional[timedelta]:

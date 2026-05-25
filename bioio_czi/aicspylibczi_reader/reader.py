@@ -26,7 +26,11 @@ from fsspec.spec import AbstractFileSystem
 
 from .. import metadata as metadata_utils
 from ..bounding_box import size
-from ..channels import get_channel_names
+from ..channels import (
+    attach_channel_emission_wavelength_coord_attrs,
+    get_channel_emission_wavelengths,
+    get_channel_names,
+)
 from ..pixel_sizes import get_physical_pixel_sizes
 from .subblock_metadata import acquisition_times, time_between_subblocks
 
@@ -580,6 +584,17 @@ class Reader(BaseReader):
 
         return coords, px_sizes
 
+    def _attach_channel_emission_wavelength_attrs(
+        self,
+        data_array: xr.DataArray,
+        scene_index: int,
+        dims_shape: Dict[str, Any],
+    ) -> xr.DataArray:
+        return attach_channel_emission_wavelength_coord_attrs(
+            data_array,
+            get_channel_emission_wavelengths(self.metadata, scene_index, dims_shape),
+        )
+
     def _read_delayed(self) -> xr.DataArray:
         """
         Construct the delayed xarray DataArray object for the image.
@@ -628,18 +643,23 @@ class Reader(BaseReader):
 
             # handle edge case where image has 0,0 YX dims:
             if image_data.shape[-2:] == (0, 0):
-                return xr.DataArray(
+                data_array = xr.DataArray(
                     dims=coords.keys(),
                     coords=coords,
                     attrs={constants.METADATA_UNPROCESSED: meta},
                 )
             else:
-                return xr.DataArray(
+                data_array = xr.DataArray(
                     image_data,
                     dims=img_dims_list,
                     coords=coords,
                     attrs={constants.METADATA_UNPROCESSED: meta},
                 )
+            return self._attach_channel_emission_wavelength_attrs(
+                data_array,
+                self.current_scene_index,
+                dims_shape,
+            )
 
     def _read_immediate(self) -> xr.DataArray:
         """
@@ -684,11 +704,16 @@ class Reader(BaseReader):
             # Store pixel sizes
             self._px_sizes = px_sizes
 
-            return xr.DataArray(
+            data_array = xr.DataArray(
                 image_data,
                 dims=[d for d in self.mapped_dims],
                 coords=coords,
                 attrs={constants.METADATA_UNPROCESSED: meta},
+            )
+            return self._attach_channel_emission_wavelength_attrs(
+                data_array,
+                self.current_scene_index,
+                dims_shape,
             )
 
     @staticmethod
@@ -1054,6 +1079,27 @@ class Reader(BaseReader):
                 czi=czi,
                 current_scene=self.current_scene_index,
             )
+
+    @property
+    def channel_emission_wavelengths(self) -> tuple[Optional[float], ...]:
+        """
+        Per-channel emission wavelengths in nanometers from metadata XML.
+        """
+        with self._fs.open(self._path) as open_resource:
+            czi = CziFile(open_resource.f)
+            dims_shape = Reader._dims_shape_to_scene_dims_shape(
+                dims_shape=czi.get_dims_shape(),
+                scene_index=self.current_scene_index,
+                consistent=czi.shape_is_consistent,
+            )
+            wavelengths = get_channel_emission_wavelengths(
+                czi.meta,
+                self.current_scene_index,
+                dims_shape,
+            )
+        if wavelengths is None:
+            return ()
+        return tuple(wavelengths)
 
     @property
     def time_interval(self) -> Optional[timedelta]:

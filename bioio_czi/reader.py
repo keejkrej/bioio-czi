@@ -11,7 +11,14 @@ from bioio_base.dimensions import Dimensions
 from bioio_base.exceptions import UnsupportedFileFormatError
 from bioio_base.reader import Reader as BaseReader
 from bioio_base.standard_metadata import StandardMetadata
-from bioio_base.types import PathLike, PhysicalPixelSizes, TimeInterval
+from bioio_base.types import (
+    DimensionProperties,
+    DimensionProperty,
+    PathLike,
+    PhysicalPixelSizes,
+    TimeInterval,
+    ureg,
+)
 from fsspec import AbstractFileSystem
 from ome_types.model import OME
 
@@ -466,6 +473,25 @@ class Reader(BaseReader):
             ``Dimensions.T.Positions.Interval.Increment``.
         """
         return self._implementation.time_interval
+
+    @property
+    def channel_emission_wavelengths(self) -> tuple[Optional[float], ...]:
+        """
+        Returns
+        -------
+        wavelengths: tuple[Optional[float], ...]
+            Per-channel emission wavelengths in nanometers, in data order.
+        """
+        return self._implementation.channel_emission_wavelengths
+
+    @property
+    def dimension_properties(self) -> DimensionProperties:
+        props = super().dimension_properties
+        if any(w is not None for w in self.channel_emission_wavelengths):
+            return props._replace(
+                C=DimensionProperty(type="emission_wavelength", unit=ureg.nanometer)
+            )
+        return props
 
     @property
     def standard_metadata(self) -> StandardMetadata:
