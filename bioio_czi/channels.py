@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 from xml.etree import ElementTree as ET
 
 import xarray as xr
@@ -10,6 +10,18 @@ from bioio_czi.bounding_box import size
 from .metadata import generate_ome_channel_id
 
 log = logging.getLogger(__name__)
+
+ChannelWavelengthKind = Literal["emission", "excitation"]
+
+_WAVELENGTH_TAGS: dict[ChannelWavelengthKind, str] = {
+    "emission": "EmissionWavelength",
+    "excitation": "ExcitationWavelength",
+}
+
+_COORD_ATTRS: dict[ChannelWavelengthKind, str] = {
+    "emission": "emission_wavelength_nm",
+    "excitation": "excitation_wavelength_nm",
+}
 
 
 def get_channel_names(
@@ -66,15 +78,20 @@ def get_channel_names(
     return scene_channel_list
 
 
-def get_channel_emission_wavelengths(
-    xml: ET.Element, scene_index: int, dims_shape: Dict[str, Any]
+def get_channel_wavelengths(
+    xml: ET.Element,
+    scene_index: int,
+    dims_shape: Dict[str, Any],
+    kind: ChannelWavelengthKind,
 ) -> Optional[list[Optional[float]]]:
     """
-    Get per-channel emission wavelengths (nm) for the given scene index.
+    Get per-channel wavelengths (nm) for the given scene index.
 
-    Wavelengths are read from ``EmissionWavelength`` on each channel in
-    ``Image/Dimensions/Channels``, in the same order as :func:`get_channel_names`.
+    Wavelengths are read from ``EmissionWavelength`` or ``ExcitationWavelength``
+    on each channel in ``Image/Dimensions/Channels``, in the same order as
+    :func:`get_channel_names`.
     """
+    tag = _WAVELENGTH_TAGS[kind]
     img_sets = xml.findall(".//Image/Dimensions/Channels")
     if len(img_sets) == 0:
         return None
@@ -94,14 +111,15 @@ def get_channel_emission_wavelengths(
 
     scene_wavelength_list: list[Optional[float]] = []
     for channel in channels[:number_of_channels_in_data]:
-        emission = channel.find("EmissionWavelength")
-        if emission is not None and emission.text is not None:
+        element = channel.find(tag)
+        if element is not None and element.text is not None:
             try:
-                scene_wavelength_list.append(float(emission.text))
+                scene_wavelength_list.append(float(element.text))
             except ValueError:
                 log.warning(
-                    "Invalid EmissionWavelength %r for channel %s",
-                    emission.text,
+                    "Invalid %s %r for channel %s",
+                    tag,
+                    element.text,
                     channel.attrib.get("Id"),
                 )
                 scene_wavelength_list.append(None)
@@ -111,21 +129,40 @@ def get_channel_emission_wavelengths(
     return scene_wavelength_list
 
 
-def attach_channel_emission_wavelength_coord_attrs(
+def get_channel_emission_wavelengths(
+    xml: ET.Element, scene_index: int, dims_shape: Dict[str, Any]
+) -> Optional[list[Optional[float]]]:
+    """Per-channel emission wavelengths (nm); see :func:`get_channel_wavelengths`."""
+    return get_channel_wavelengths(xml, scene_index, dims_shape, "emission")
+
+
+def get_channel_excitation_wavelengths(
+    xml: ET.Element, scene_index: int, dims_shape: Dict[str, Any]
+) -> Optional[list[Optional[float]]]:
+    """Per-channel excitation wavelengths (nm); see :func:`get_channel_wavelengths`."""
+    return get_channel_wavelengths(xml, scene_index, dims_shape, "excitation")
+
+
+def attach_channel_wavelength_coord_attrs(
     data_array: xr.DataArray,
-    emission_wavelengths_nm: Optional[list[Optional[float]]],
+    emission_wavelengths_nm: Optional[list[Optional[float]]] = None,
+    excitation_wavelengths_nm: Optional[list[Optional[float]]] = None,
 ) -> xr.DataArray:
     """
-    Attach ``emission_wavelength_nm`` to the channel coordinate when present.
+    Attach OME-aligned ``emission_wavelength_nm`` and ``excitation_wavelength_nm``
+    to the channel coordinate when present.
     """
-    if (
-        emission_wavelengths_nm is None
-        or DimensionNames.Channel not in data_array.coords
-        or not any(w is not None for w in emission_wavelengths_nm)
-    ):
+    if DimensionNames.Channel not in data_array.coords:
         return data_array
 
-    data_array.coords[DimensionNames.Channel].attrs["emission_wavelength_nm"] = (
-        emission_wavelengths_nm
-    )
+    for kind, wavelengths in (
+        ("emission", emission_wavelengths_nm),
+        ("excitation", excitation_wavelengths_nm),
+    ):
+        if wavelengths is None or not any(w is not None for w in wavelengths):
+            continue
+        data_array.coords[DimensionNames.Channel].attrs[_COORD_ATTRS[kind]] = (
+            wavelengths
+        )
+
     return data_array

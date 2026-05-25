@@ -23,9 +23,12 @@ from pylibCZIrw import czi
 
 from .. import metadata
 from ..channels import (
-    attach_channel_emission_wavelength_coord_attrs,
+    ChannelWavelengthKind,
+    attach_channel_wavelength_coord_attrs,
     get_channel_emission_wavelengths,
+    get_channel_excitation_wavelengths,
     get_channel_names,
+    get_channel_wavelengths,
     size,
 )
 from ..metadata import UnsupportedMetadataError
@@ -383,12 +386,14 @@ class Reader(BaseReader):
             coords=coords,
             attrs={constants.METADATA_UNPROCESSED: self.metadata},
         )
-        return attach_channel_emission_wavelength_coord_attrs(
+        scene_index = self._get_czi_scene_index()
+        return attach_channel_wavelength_coord_attrs(
             data_array,
-            get_channel_emission_wavelengths(
-                self.metadata,
-                self._get_czi_scene_index(),
-                dim_bounds,
+            emission_wavelengths_nm=get_channel_emission_wavelengths(
+                self.metadata, scene_index, dim_bounds
+            ),
+            excitation_wavelengths_nm=get_channel_excitation_wavelengths(
+                self.metadata, scene_index, dim_bounds
             ),
         )
 
@@ -508,19 +513,28 @@ class Reader(BaseReader):
         """
         return None
 
-    @property
-    def channel_emission_wavelengths(self) -> tuple[Optional[float], ...]:
-        """
-        Per-channel emission wavelengths in nanometers from metadata XML.
-        """
-        wavelengths = get_channel_emission_wavelengths(
+    def _channel_wavelengths(
+        self, kind: ChannelWavelengthKind
+    ) -> tuple[Optional[float], ...]:
+        wavelengths = get_channel_wavelengths(
             self.metadata,
             self._get_czi_scene_index(),
             self._total_bounding_box,
+            kind,
         )
         if wavelengths is None:
             return ()
         return tuple(wavelengths)
+
+    @property
+    def channel_emission_wavelengths(self) -> tuple[Optional[float], ...]:
+        """Per-channel emission wavelengths (nm); OME ``EmissionWavelength``."""
+        return self._channel_wavelengths("emission")
+
+    @property
+    def channel_excitation_wavelengths(self) -> tuple[Optional[float], ...]:
+        """Per-channel excitation wavelengths (nm); OME ``ExcitationWavelength``."""
+        return self._channel_wavelengths("excitation")
 
     @property
     def time_interval(self) -> Optional[timedelta]:

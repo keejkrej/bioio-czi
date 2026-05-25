@@ -481,15 +481,33 @@ class Reader(BaseReader):
         -------
         wavelengths: tuple[Optional[float], ...]
             Per-channel emission wavelengths in nanometers, in data order.
+            Aligns with OME ``Channel@EmissionWavelength``.
         """
         return self._implementation.channel_emission_wavelengths
 
     @property
+    def channel_excitation_wavelengths(self) -> tuple[Optional[float], ...]:
+        """
+        Returns
+        -------
+        wavelengths: tuple[Optional[float], ...]
+            Per-channel excitation wavelengths in nanometers, in data order.
+            Aligns with OME ``Channel@ExcitationWavelength``.
+        """
+        return self._implementation.channel_excitation_wavelengths
+
+    @property
     def dimension_properties(self) -> DimensionProperties:
         props = super().dimension_properties
-        if any(w is not None for w in self.channel_emission_wavelengths):
+        if any(
+            w is not None
+            for w in (
+                *self.channel_emission_wavelengths,
+                *self.channel_excitation_wavelengths,
+            )
+        ):
             return props._replace(
-                C=DimensionProperty(type="emission_wavelength", unit=ureg.nanometer)
+                C=DimensionProperty(type="channel", unit=ureg.nanometer)
             )
         return props
 

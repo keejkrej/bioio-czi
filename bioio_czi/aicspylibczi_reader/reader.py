@@ -27,9 +27,12 @@ from fsspec.spec import AbstractFileSystem
 from .. import metadata as metadata_utils
 from ..bounding_box import size
 from ..channels import (
-    attach_channel_emission_wavelength_coord_attrs,
+    ChannelWavelengthKind,
+    attach_channel_wavelength_coord_attrs,
     get_channel_emission_wavelengths,
+    get_channel_excitation_wavelengths,
     get_channel_names,
+    get_channel_wavelengths,
 )
 from ..pixel_sizes import get_physical_pixel_sizes
 from .subblock_metadata import acquisition_times, time_between_subblocks
@@ -584,15 +587,21 @@ class Reader(BaseReader):
 
         return coords, px_sizes
 
-    def _attach_channel_emission_wavelength_attrs(
+    def _attach_channel_wavelength_attrs(
         self,
         data_array: xr.DataArray,
         scene_index: int,
         dims_shape: Dict[str, Any],
+        xml: ET.Element,
     ) -> xr.DataArray:
-        return attach_channel_emission_wavelength_coord_attrs(
+        return attach_channel_wavelength_coord_attrs(
             data_array,
-            get_channel_emission_wavelengths(self.metadata, scene_index, dims_shape),
+            emission_wavelengths_nm=get_channel_emission_wavelengths(
+                xml, scene_index, dims_shape
+            ),
+            excitation_wavelengths_nm=get_channel_excitation_wavelengths(
+                xml, scene_index, dims_shape
+            ),
         )
 
     def _read_delayed(self) -> xr.DataArray:
@@ -655,10 +664,11 @@ class Reader(BaseReader):
                     coords=coords,
                     attrs={constants.METADATA_UNPROCESSED: meta},
                 )
-            return self._attach_channel_emission_wavelength_attrs(
+            return self._attach_channel_wavelength_attrs(
                 data_array,
                 self.current_scene_index,
                 dims_shape,
+                meta,
             )
 
     def _read_immediate(self) -> xr.DataArray:
@@ -710,10 +720,11 @@ class Reader(BaseReader):
                 coords=coords,
                 attrs={constants.METADATA_UNPROCESSED: meta},
             )
-            return self._attach_channel_emission_wavelength_attrs(
+            return self._attach_channel_wavelength_attrs(
                 data_array,
                 self.current_scene_index,
                 dims_shape,
+                meta,
             )
 
     @staticmethod
@@ -1080,11 +1091,9 @@ class Reader(BaseReader):
                 current_scene=self.current_scene_index,
             )
 
-    @property
-    def channel_emission_wavelengths(self) -> tuple[Optional[float], ...]:
-        """
-        Per-channel emission wavelengths in nanometers from metadata XML.
-        """
+    def _channel_wavelengths(
+        self, kind: ChannelWavelengthKind
+    ) -> tuple[Optional[float], ...]:
         with self._fs.open(self._path) as open_resource:
             czi = CziFile(open_resource.f)
             dims_shape = Reader._dims_shape_to_scene_dims_shape(
@@ -1092,14 +1101,25 @@ class Reader(BaseReader):
                 scene_index=self.current_scene_index,
                 consistent=czi.shape_is_consistent,
             )
-            wavelengths = get_channel_emission_wavelengths(
+            wavelengths = get_channel_wavelengths(
                 czi.meta,
                 self.current_scene_index,
                 dims_shape,
+                kind,
             )
         if wavelengths is None:
             return ()
         return tuple(wavelengths)
+
+    @property
+    def channel_emission_wavelengths(self) -> tuple[Optional[float], ...]:
+        """Per-channel emission wavelengths (nm); OME ``EmissionWavelength``."""
+        return self._channel_wavelengths("emission")
+
+    @property
+    def channel_excitation_wavelengths(self) -> tuple[Optional[float], ...]:
+        """Per-channel excitation wavelengths (nm); OME ``ExcitationWavelength``."""
+        return self._channel_wavelengths("excitation")
 
     @property
     def time_interval(self) -> Optional[timedelta]:
