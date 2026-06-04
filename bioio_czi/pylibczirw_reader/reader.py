@@ -27,6 +27,21 @@ from ..pixel_sizes import get_physical_pixel_sizes
 
 log = logging.getLogger(__name__)
 
+# CZI-specific dimensions outside BioIO's default TCZYX ordering.
+# H holds Airyscan raw detector planes (see bioio-czi issue #72).
+CZI_EXTRA_DIMENSION_ORDER_LIST = [
+    "H",
+    "M",
+    "R",
+    "I",
+    "V",
+]
+PYLIBCZI_DIMENSION_ORDER_LIST = (
+    CZI_EXTRA_DIMENSION_ORDER_LIST + DEFAULT_DIMENSION_ORDER_LIST
+)
+# Internal CZI block tiling; not exposed as a reader dimension.
+CZI_BLOCK_DIM_CHAR = "B"
+
 PIXEL_DICT = {
     "gray8": np.uint8,
     "gray16": np.uint16,
@@ -296,6 +311,29 @@ class Reader(BaseReader):
 
         return array_builder
 
+    @staticmethod
+    def _ordered_dims_from_bounding_box(
+        bounding_box: Dict[str, Tuple[int, int]],
+        coords: Dict[str, Union[list, np.ndarray]],
+    ) -> list[str]:
+        """
+        Return dimension names present in the file, ordered for BioIO output.
+
+        Includes CZI-specific dimensions such as H (Airyscan detectors) when their
+        extent is greater than one.
+        """
+        ordered_dims = [
+            dim
+            for dim in PYLIBCZI_DIMENSION_ORDER_LIST
+            if dim != CZI_BLOCK_DIM_CHAR
+            and (dim in coords or size(bounding_box, dim) > 1)
+        ]
+        assert ordered_dims[-2:] == [
+            DimensionNames.SpatialY,
+            DimensionNames.SpatialX,
+        ]
+        return ordered_dims
+
     def _read_delayed(self) -> xr.DataArray:
         """
         The delayed data array constructor for the image.
@@ -329,13 +367,9 @@ class Reader(BaseReader):
             dim_bounds,
         )
 
-        # 2. Figure out which dimensions are available on this image, and put them in
-        # TCZYX order as much as possible.
-        ordered_dims = [
-            d
-            for d in DEFAULT_DIMENSION_ORDER_LIST
-            if d in coords or size(self._total_bounding_box, d) > 1
-        ]
+        # 2. Figure out which dimensions are available on this image, including
+        # CZI-specific dimensions such as H (Airyscan raw detector planes).
+        ordered_dims = self._ordered_dims_from_bounding_box(dim_bounds, coords)
         assert ordered_dims[-2:] == [DimensionNames.SpatialY, DimensionNames.SpatialX]
         # E.g., non_yx_dims = ['T', 'C', 'Z']
         non_yx_dims = ordered_dims[:-2]
